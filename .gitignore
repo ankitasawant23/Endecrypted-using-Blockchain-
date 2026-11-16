@@ -23,3 +23,12 @@ coverage/
 # Hardhat
 artifacts/
 cache/
+# Cryptographic private keys
+**/keys/
+*.pem
+**/keys/
+*.pem
+node_modules/
+.env
+.env.*
+!.env.example

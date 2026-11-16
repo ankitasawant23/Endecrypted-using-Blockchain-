@@ -1,0 +1,10 @@
+{
+  "name": "crypto-module",
+  "version": "1.0.0",
+  "description": "RSA, AES-256-GCM and SHA-256 cryptography module",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
