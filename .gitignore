@@ -1,0 +1,25 @@
+# Node.js
+node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Build files
+build/
+dist/
+
+# Flutter
+.dart_tool/
+
+# IDE settings
+.idea/
+.vscode/
+
+# Testing
+coverage/
+
+# Hardhat
+artifacts/
+cache/
