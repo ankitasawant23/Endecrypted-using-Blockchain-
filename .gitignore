@@ -32,3 +32,32 @@ node_modules/
 .env
 .env.*
 !.env.example
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Private RSA Keys
+**/keys/
+*.pem
+
+# Node modules
+node_modules/
+
+# Build files
+build/
+dist/
+
+# Flutter
+.dart_tool/
+
+# IDE files
+.idea/
+.vscode/
+
+# Hardhat
+artifacts/
+cache/
+
+# Coverage
+coverage/
