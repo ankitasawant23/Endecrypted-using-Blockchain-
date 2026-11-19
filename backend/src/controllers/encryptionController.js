@@ -6,18 +6,47 @@ import { encryptMessage } from '../../../crypto-module/src/encryption.js';
 
 import { decryptMessage } from '../../../crypto-module/src/decryption.js';
 
-import { generateEncryptedDataHash } from '../../../crypto-module/src/hashing.js';
+import {
+    generateEncryptedDataHash,
+    verifyHash
+} from '../../../crypto-module/src/hashing.js';
 
 
 // ENCRYPT DATA
 export const encryptData = async (req, res) => {
     try {
-        const { message, fileName } = req.body;
+        const { message, fileName } = req.body || {};
 
-        if (!message) {
+        // Validate message
+        if (
+            typeof message !== 'string' ||
+            message.trim().length === 0
+        ) {
             return res.status(400).json({
                 success: false,
-                message: 'Message is required.'
+                message: 'A valid message is required.'
+            });
+        }
+
+        if (message.length > 10000) {
+            return res.status(400).json({
+                success: false,
+                message: 'Message cannot exceed 10000 characters.'
+            });
+        }
+
+        // Validate file name
+        if (
+            fileName !== undefined &&
+            (
+                typeof fileName !== 'string' ||
+                fileName.trim().length === 0 ||
+                fileName.length > 255
+            )
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid file name.'
             });
         }
 
@@ -34,7 +63,7 @@ export const encryptData = async (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
                 req.user.id,
-                fileName || 'text-data',
+                fileName ? fileName.trim() : 'text-data',
                 encryptedObject.encryptedData,
                 encryptedObject.encryptedAESKey,
                 encryptedObject.iv,
@@ -65,12 +94,16 @@ export const encryptData = async (req, res) => {
 // DECRYPT DATA
 export const decryptData = async (req, res) => {
     try {
-        const { fileId } = req.body;
+        const { fileId } = req.body || {};
 
-        if (!fileId) {
+        // Validate file ID
+        if (
+            !Number.isSafeInteger(fileId) ||
+            fileId <= 0
+        ) {
             return res.status(400).json({
                 success: false,
-                message: 'File ID is required.'
+                message: 'A valid positive file ID is required.'
             });
         }
 
@@ -97,6 +130,22 @@ export const decryptData = async (req, res) => {
             authTag: file.auth_tag
         };
 
+        // Verify encrypted data integrity
+        const calculatedHash =
+            generateEncryptedDataHash(encryptedObject);
+
+        const isValid = verifyHash(
+            file.data_hash,
+            calculatedHash
+        );
+
+        if (!isValid) {
+            return res.status(400).json({
+                success: false,
+                message: 'Encrypted data integrity verification failed. Decryption stopped.'
+            });
+        }
+
         // Decrypt data
         const decryptedMessage = decryptMessage(
             encryptedObject,
@@ -105,7 +154,7 @@ export const decryptData = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            message: 'Data decrypted successfully!',
+            message: 'Data integrity verified and decryption successful!',
             decryptedData: decryptedMessage
         });
 
