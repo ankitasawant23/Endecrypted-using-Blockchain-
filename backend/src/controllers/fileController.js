@@ -1,4 +1,5 @@
 import db from '../config/database.js';
+import bcrypt from 'bcrypt';
 
 export const getUserFiles = async (req, res) => {
     try {
@@ -43,6 +44,7 @@ export const deleteUserFile = async (req, res) => {
     try {
         const userId = req.user?.id;
         const fileId = Number(req.params.fileId);
+        const { decryptionKey } = req.body || {};
 
         if (!Number.isSafeInteger(userId) || userId <= 0) {
             return res.status(401).json({
@@ -55,6 +57,43 @@ export const deleteUserFile = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'A valid file ID is required.'
+            });
+        }
+
+        if (typeof decryptionKey !== 'string' || decryptionKey.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'The record decryption key is required to delete this file.'
+            });
+        }
+
+        const [files] = await db.execute(
+            `SELECT decryption_key_hash
+             FROM encrypted_files
+             WHERE id = ? AND user_id = ?`,
+            [fileId, userId]
+        );
+
+        if (files.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Encrypted file not found.'
+            });
+        }
+
+        const keyHash = files[0].decryption_key_hash;
+
+        if (typeof keyHash !== 'string') {
+            return res.status(409).json({
+                success: false,
+                message: 'This file has no saved decryption key and cannot be deleted with key verification.'
+            });
+        }
+
+        if (!(await bcrypt.compare(decryptionKey, keyHash))) {
+            return res.status(403).json({
+                success: false,
+                message: 'The decryption key is incorrect.'
             });
         }
 

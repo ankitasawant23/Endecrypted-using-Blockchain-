@@ -311,25 +311,137 @@ function FilesPage({ initialSearch = '' }) {
   const [files, setFiles] = useState([]);
   const [search, setSearch] = useState(initialSearch);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [decryptionKey, setDecryptionKey] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const loadFiles = () => {
     setLoading(true);
+    setLoadError('');
     api('/api/files/my-files')
-      .then((data) => setFiles(data.files?.length ? data.files : []))
-      .catch(() => setFiles([]))
+      .then((data) => setFiles(Array.isArray(data.files) ? data.files : []))
+      .catch((error) => {
+        setFiles([]);
+        setLoadError(error.message);
+      })
       .finally(() => setLoading(false));
   };
   useEffect(loadFiles, []);
-  const deleteFile = async (file) => {
-    if (!window.confirm(`Delete "${file.file_name || 'this encrypted record'}"? This cannot be undone.`)) return;
+  const deleteFile = async (event) => {
+    event.preventDefault();
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError('');
     try {
-      await api(`/api/files/${file.id}`, { method: 'DELETE' });
-      loadFiles();
+      await api(`/api/files/${deleteTarget.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ decryptionKey })
+      });
+      setFiles((current) => current.filter((file) => file.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      setDecryptionKey('');
     } catch (error) {
-      window.alert(error.message);
+      setDeleteError(error.message);
+    } finally {
+      setDeleting(false);
     }
   };
   const visible = files.filter((file) => (file.file_name || '').toLowerCase().includes(search.toLowerCase()));
-  return <><PageHeader eyebrow="DATA VAULT" title="My files" description="Manage all of your encrypted records." action={<button className="primary-button compact" onClick={() => window.dispatchEvent(new CustomEvent('cipherchain:navigate', { detail: 'Encrypt' }))}><Icon name="plus" size={17} />Add record</button>} /><section className="panel table-panel"><div className="table-toolbar"><div className="search-box"><Icon name="search" size={16} /><input placeholder="Search files..." value={search} onChange={(e) => setSearch(e.target.value)} /></div><span>{visible.length} records</span></div><div className="data-table"><div className="data-head"><span>Name</span><span>Hash</span><span>Created</span><span>Status</span><span></span></div>{loading ? <div className="table-empty">Loading records...</div> : visible.length ? visible.map((file) => <div className="data-row" key={file.id}><div className="data-name"><div className="file-icon"><Icon name="file" size={17} /></div><div><strong>{file.file_name || 'Encrypted record'}</strong><small>#{file.id}</small></div></div><code>{file.data_hash?.slice(0, 12)}…</code><span>{file.created_at ? new Date(file.created_at).toLocaleDateString() : '—'}</span><span className="status-pill"><i></i>Secured</span><button className="row-action delete-action" title="Delete encrypted record" aria-label={`Delete ${file.file_name}`} onClick={() => deleteFile(file)}>Delete</button></div>) : <div className="table-empty">No encrypted records found.</div>}</div></section></>;
+  return (
+    <>
+      <PageHeader
+        eyebrow="DATA VAULT"
+        title="My files"
+        description="Manage all of your encrypted records."
+        action={
+          <button
+            className="primary-button compact"
+            onClick={() => window.dispatchEvent(new CustomEvent('cipherchain:navigate', { detail: 'Encrypt' }))}
+          >
+            <Icon name="plus" size={17} />Add record
+          </button>
+        }
+      />
+      <section className="panel table-panel">
+        <div className="table-toolbar">
+          <div className="search-box">
+            <Icon name="search" size={16} />
+            <input placeholder="Search files..." value={search} onChange={(event) => setSearch(event.target.value)} />
+          </div>
+          <span>{visible.length} records</span>
+        </div>
+        <div className="data-table">
+          <div className="data-head"><span>Name</span><span>Hash</span><span>Created</span><span>Status</span><span></span></div>
+          {loading ? <div className="table-empty">Loading records...</div> : loadError ? <div className="table-empty error">{loadError}</div> : visible.length ? visible.map((file) => (
+            <div className="data-row" key={file.id}>
+              <div className="data-name">
+                <div className="file-icon"><Icon name="file" size={17} /></div>
+                <div><strong>{file.file_name || 'Encrypted record'}</strong><small>#{file.id}</small></div>
+              </div>
+              <code>{file.data_hash?.slice(0, 12)}…</code>
+              <span>{file.created_at ? new Date(file.created_at).toLocaleDateString() : '—'}</span>
+              <span className="status-pill"><i></i>Secured</span>
+              <button
+                className="row-action delete-action"
+                title="Delete encrypted record"
+                aria-label={`Delete ${file.file_name}`}
+                onClick={() => {
+                  setDeleteTarget(file);
+                  setDecryptionKey('');
+                  setDeleteError('');
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          )) : <div className="table-empty">No encrypted records found.</div>}
+        </div>
+      </section>
+      {deleteTarget && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleting) setDeleteTarget(null);
+          }}
+        >
+          <form className="delete-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title" onSubmit={deleteFile}>
+            <button
+              className="modal-close"
+              type="button"
+              aria-label="Close dialog"
+              disabled={deleting}
+              onClick={() => setDeleteTarget(null)}
+            >
+              <Icon name="close" size={18} />
+            </button>
+            <div className="delete-modal-icon"><Icon name="key" size={24} /></div>
+            <span className="eyebrow">CONFIRM DELETION</span>
+            <h2 id="delete-title">Enter the decryption key</h2>
+            <p>To delete <strong>{deleteTarget.file_name}</strong>, enter the key set when this record was encrypted. This action cannot be undone.</p>
+            <label className="field">
+              Decryption key
+              <input
+                autoFocus
+                type="password"
+                required
+                value={decryptionKey}
+                onChange={(event) => setDecryptionKey(event.target.value)}
+                placeholder="Enter this record's key"
+              />
+            </label>
+            {deleteError && <div className="form-message">{deleteError}</div>}
+            <div className="delete-modal-actions">
+              <button className="secondary-button" type="button" disabled={deleting} onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="danger-button" type="submit" disabled={deleting || !decryptionKey}>
+                {deleting ? 'Deleting...' : 'Verify key and delete'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
 }
 
 function VerificationPage() {
