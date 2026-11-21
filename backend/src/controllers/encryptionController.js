@@ -1,4 +1,5 @@
 import db from '../config/database.js';
+import bcrypt from 'bcrypt';
 
 import { publicKey, privateKey } from '../config/cryptoConfig.js';
 
@@ -15,7 +16,7 @@ import {
 // ENCRYPT DATA
 export const encryptData = async (req, res) => {
     try {
-        const { message, fileName } = req.body || {};
+        const { message, fileName, decryptionKey } = req.body || {};
 
         // Validate message
         if (
@@ -32,6 +33,17 @@ export const encryptData = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'Message cannot exceed 10000 characters.'
+            });
+        }
+
+        if (
+            typeof decryptionKey !== 'string' ||
+            decryptionKey.length < 8 ||
+            decryptionKey.length > 72
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'Decryption key must contain between 8 and 72 characters.'
             });
         }
 
@@ -55,12 +67,13 @@ export const encryptData = async (req, res) => {
 
         // Generate SHA-256 hash
         const dataHash = generateEncryptedDataHash(encryptedObject);
+        const decryptionKeyHash = await bcrypt.hash(decryptionKey, 12);
 
         // Store encrypted data in MySQL
         const [result] = await db.execute(
             `INSERT INTO encrypted_files
-            (user_id, file_name, encrypted_data, encrypted_key, iv, auth_tag, data_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            (user_id, file_name, encrypted_data, encrypted_key, iv, auth_tag, data_hash, decryption_key_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 req.user.id,
                 fileName ? fileName.trim() : 'text-data',
@@ -68,7 +81,8 @@ export const encryptData = async (req, res) => {
                 encryptedObject.encryptedAESKey,
                 encryptedObject.iv,
                 encryptedObject.authTag,
-                dataHash
+                dataHash,
+                decryptionKeyHash
             ]
         );
 
@@ -94,7 +108,7 @@ export const encryptData = async (req, res) => {
 // DECRYPT DATA
 export const decryptData = async (req, res) => {
     try {
-        const { fileId } = req.body || {};
+        const { fileId, decryptionKey } = req.body || {};
 
         // Validate file ID
         if (
@@ -104,6 +118,16 @@ export const decryptData = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'A valid positive file ID is required.'
+            });
+        }
+
+        if (
+            typeof decryptionKey !== 'string' ||
+            decryptionKey.length === 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'A valid decryption key is required.'
             });
         }
 
@@ -122,6 +146,16 @@ export const decryptData = async (req, res) => {
         }
 
         const file = files[0];
+
+        if (
+            typeof file.decryption_key_hash !== 'string' ||
+            !(await bcrypt.compare(decryptionKey, file.decryption_key_hash))
+        ) {
+            return res.status(403).json({
+                success: false,
+                message: 'The decryption key is incorrect.'
+            });
+        }
 
         const encryptedObject = {
             encryptedData: file.encrypted_data,
